@@ -1,5 +1,5 @@
 {
-    "name": "lecturize/laravel-taxonomies",
+    "name": "webspec-design/laravel-taxonomies",
     "description": "Simple, nestable Terms & Taxonomies (similar to WordPress) for Laravel.",
     "homepage" : "https://github.com/Lecturize/Laravel-Taxonomies",
     "license": "MIT",
