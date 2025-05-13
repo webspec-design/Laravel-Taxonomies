@@ -1,0 +1,3007 @@
+diff --git a/LICENSE b/LICENSE
+index 1727637..74ce9c3 100644
+--- a/LICENSE
++++ b/LICENSE
+@@ -1,6 +1,6 @@
+ The MIT License (MIT)
+ 
+-Copyright (c) 2015-2017 Alexander Manfred Poellmann
++Copyright (c) 2015-2022 Alexander Manfred Poellmann
+ 
+ Permission is hereby granted, free of charge, to any person obtaining a copy
+ of this software and associated documentation files (the "Software"), to deal
+diff --git a/README.md b/README.md
+index f2fbf5a..6c7abfd 100644
+--- a/README.md
++++ b/README.md
+@@ -4,13 +4,7 @@
+ 
+ # Laravel Taxonomies
+ 
+-Simple, nestable Terms & Taxonomies (similar to WordPress) for Laravel 5.
+-
+-## Important Notice
+-
+-**This package is a work in progress**, please use with care and feel free to report any issues or ideas you may have!
+-
+-We've transferred this package to a new owner and therefor updated the namespaces to **Lecturize\Taxonomies**. The config file is now `config/lecturize.php`.
++Simple, nestable Terms & Taxonomies (similar to WordPress) for Laravel.
+ 
+ ## Installation
+ 
+@@ -18,22 +12,12 @@ Require the package from your `composer.json` file
+ 
+ ```php
+ "require": {
+-    "lecturize/laravel-taxonomies": "dev-master"
++    "lecturize/laravel-taxonomies": "^1.2"
+ }
+ ```
+ 
+ and run `$ composer update` or both in one with `$ composer require lecturize/laravel-taxonomies`.
+ 
+-Next register the service provider and (optional) facade to your `config/app.php` file
+-
+-```php
+-'providers' => [
+-    // ...
+-    Cviebrock\EloquentSluggable\ServiceProvider::class,
+-    Lecturize\Taxonomies\TaxonomiesServiceProvider::class,
+-];
+-```
+-
+ ## Configuration & Migration
+ 
+ ```bash
+@@ -41,24 +25,29 @@ $ php artisan vendor:publish --provider="Cviebrock\EloquentSluggable\ServiceProv
+ $ php artisan vendor:publish --provider="Lecturize\Taxonomies\TaxonomiesServiceProvider"
+ ```
+ 
+-This will create a `config/sluggable.php`, a `config/lecturize.php` and a migration file, that you'll have to run like so:
++This will publish a `config/sluggable.php`, a `config/lecturize.php` and some migration files, that you'll have to run:
+ 
+ ```bash
+ $ php artisan migrate
+ ```
+ 
++For migrations to be properly published ensure that you have added the directory `database/migrations` to the classmap in your projects `composer.json`.
++
+ ## Usage
+ 
+-First, add our `HasTaxonomies` trait to your model.
++First, add our `HasCategories` trait to your model.
+         
+ ```php
+-<?php namespace App\Models;
++<?php
++
++namespace App\Models;
+ 
+-use Lecturize\Taxonomies\Traits\HasTaxonomies;
++use Lecturize\Taxonomies\Contracts\CanHaveCategories;
++use Lecturize\Taxonomies\Traits\HasCategories;
+ 
+-class Post extends Model
++class Post extends Model implements CanHaveCategories
+ {
+-    use HasTaxonomies;
++    use HasCategories;
+ 
+     // ...
+ }
+@@ -67,54 +56,84 @@ class Post extends Model
+ 
+ ##### Add a Term
+ ```php
+-$model->addTerm('My Category', 'taxonomy')
++$model->addCategory('My Category', 'blog_category')
+ ```
+ 
+ ##### Add multiple Terms
+ ```php
+-$model->addTerm(['Add','Multiple','Categories'], 'taxonomy')
++$model->addCategories(['Add','Multiple','Categories'], 'blog_category')
+ ```
+ 
+-##### Add a Term with optional parent (taxonomy) & order
++##### Add a Term with optional parent_id (taxonomy->id) & sort order
+ ```php
+-$model->addTerm('My Category', 'taxonomy', 1, 2)
++$model->addCategory('My Category', 'blog_category', 1, 2)
+ ```
+ 
+ ##### Get all Terms for a model by taxonomy
+ ```php
+-$model->getTerms('taxonomy')
++$model->getCategories('taxonomy')
+ ```
+ 
+ ##### Get a specific Term for a model by (optional) taxonomy
+ ```php
+-$model->getTerm('My Category', 'taxonomy')
++$model->getCategory('My Category', 'blog_category')
+ ```
+ 
+-##### Convenience method for getTerm()
++##### See if model has a given category within given taxonomy
+ ```php
+-$model->hasTerm($term, 'taxonomy')
++$model->hasCategory('My Category', 'blog_category')
+ ```
+ 
+ ##### Remove a Term from model by (optional) taxonomy
+ ```php
+-$model->removeTerm($term, 'taxonomy')
++$model->detachCategory('My Category', 'blog_category')
++```
++
++##### Remove (detach) all categories relations from model
++```php
++$model->detachCategories()
+ ```
+ 
+-##### Remove all Terms from model
++##### Scope models with any of the given categories
+ ```php
+-$model->removeAllTerms()
++$model = Model::categorizedIn(['Add','Multiple','Categories'], 'blog_category')->get();
+ ```
+ 
+-##### Scope models with multiple Terms
++##### Scope models with one category
+ ```php
+-$model = Model::withTerms($terms, 'taxonomy')->get();
++$model = Model::categorized('My Category', 'blog_category')->get();
+ ```
+ 
+-##### Scope models with one Term
++## Helper functions
++
++I've included a set of helper functions for your convenience, see `src/helpers.php`.
++
++## Custom taxonomy model
++
++Make sure to create a custom `Taxonomy` model, that extends `Lecturize\Taxonomies\Models\Taxonomy`.
++
+ ```php
+-$model = Model::withTerm($term, 'taxonomy')->get();
++<?php
++
++namespace App\Models;
++
++use App\Models\Post;
++use Illuminate\Database\Eloquent\Model;
++use Illuminate\Database\Eloquent\Relations\MorphToMany;
++use Lecturize\Taxonomies\Models\Taxonomy as TaxonomyBase;
++
++class Taxonomy extends TaxonomyBase
++{
++    public function posts(): MorphToMany
++    {
++        return $this->morphedByMany(Post::class, 'taxable', 'taxables')
++                    ->withTimestamps();
++    }
++}
+ ```
+ 
++Don't forget to publish the config file and update the value of `lecturize.taxonomies.taxonomies.model` to `\App\Models\Post:class`.
++
+ ## Example
+ 
+ **Add categories to an Eloquent model**
+@@ -122,11 +141,11 @@ $model = Model::withTerm($term, 'taxonomy')->get();
+ ```php
+ $post = Post::find(1);
+ 
+-$post->addTerm('My First Category', 'category');
+-$post->addTerm(['Category Two', 'Category Three'], 'category');
++$post->addCategory('My First Category', 'blog_category');
++$post->addCategories(['Category Two', 'Category Three'], 'blog_category');
+ ```
+ 
+-First fo all, this snippet will create three entries in your `terms` table, if they don't already exist:
++First, this snippet will create three entries in your `terms` table, if they don't already exist:
+ 
+ * My First Category
+ * Category Two
+@@ -138,16 +157,34 @@ And last it will relate the entries from your `taxonomies` table with your model
+ 
+ **Why three tables?**
+ 
+-Imagine you have a Taxonomy called *post_cat* and another one *product_cat*, the first categorises your blog posts, the second the products in your online shop. Now you add a product to a category (a *term*) called *Shoes* using `$product->addTerm('Sheos', 'product_cat');`. Afterwards you want to blog about that product and add that post to a *post_cat* called *Shoes* as well, using `$product->addTerm('Sheos', 'post_cat');`.
++Imagine you have a Taxonomy called *post_cat* and another one *product_cat*, the first categorises your blog posts, the second the products in your online shop. Now you add a product to a category (a *term*) called *Shoes* using `$product->addCategory('Shoes', 'product_cat');`. Afterwards you want to blog about that product and add that post to a *post_cat* called *Shoes* as well, using `$product->addCategory('Shoes', 'post_cat');`.
+ 
+-Normally you would have two entries now in your database, one like `['Sheos','product_cat']` and another `['Sheos','post_at']`. Oops, now you recognize you misspelled *Shoes*, now you would have to change it twice, for each Taxonomy.
++Normally you would have two entries now in your database, one like `['Shoes','product_cat']` and another `['Shoes','post_at']`. Oops, now you recognize you misspelled *Shoes*, now you would have to change it twice, for each Taxonomy.
+ 
+ So I wanted to keep my *Terms* unique throughout my app, which is why I separated them from the Taxonomies and simply related them.
+ 
++## Changelog
++
++### [2021-02-09] **v1.0**
++
++Extended the database tables to support UUIDs (be sure to generate some on your existing models) and better customization. Quite some breaking changes throughout the whole package.
++
++### [2022-05-16] **v1.1**
++
++Updated dependencies to PHP 8 and Laravel 8/9 - for older versions please refer to v1.0. Added new columns like `content`, `lead`, `meta_desc`, `visible` and `searchable` to taxonomies table. Renamed the `term` scope on the `Taxonomy` model to `byTerm` to avoid confusion with its `term` relationship method.
++
++### [2022-06-04] **v1.2**
++
++Removed the `Taxable` model, you should create a custom `Taxonomy` model in your project that extends `Lecturize\Taxonomies\Models\Taxonomy` and contain your project-specific **morphedByMany** relations, e.g. `posts`. Don't forget to override the config value of `config('lecturize.taxonomies.taxonomies.model')` accordingly.
++
++On the `taxable` pivot table a primary key has been added, make sure you have no duplicates in that table **before** publishing and running the new migrations! Also, timestamps have been added to the pivot table.
++
++If you are using the `get_categories_collection()` or `build_categories_collection_from_tree()` helper function or `Taxonomy::getTree()` review the slightly adapted signatures. Instead of a taxables class (e.g. `\Post:class`) through the `$taxable` argument, we now ask for a `$taxable_relation` (e.g. the `posts` relation on your custom taxonomy model). If you continue to pass a class name like `\Post:class` we'll try and guess the relation by using `Str::plural()`. 
++
+ ## License
+ 
+ Licensed under [MIT license](http://opensource.org/licenses/MIT).
+ 
+ ## Author
+ 
+-**Handcrafted with love by [Alexander Manfred Poellmann](https://twitter.com/AMPoellmann) in Vienna &amp; Rome.**
+\ No newline at end of file
++**Handcrafted with love by [Alexander Manfred Poellmann](https://twitter.com/AMPoellmann) in Vienna &amp; Rome.**
+diff --git a/composer.json b/composer.json
+index e54e6bf..2504b7c 100644
+--- a/composer.json
++++ b/composer.json
+@@ -1,8 +1,9 @@
+ {
+-    "name": "webspectyler/laravel-taxonomies",
+-    "description": "Simple, nestable Terms & Taxonomies (similar to WordPress) for Laravel 6.",
+-    "homepage" : "https://github.com/webspectyler/Laravel-Taxonomies",
++    "name": "lecturize/laravel-taxonomies",
++    "description": "Simple, nestable Terms & Taxonomies (similar to WordPress) for Laravel.",
++    "homepage" : "https://github.com/Lecturize/Laravel-Taxonomies",
+     "license": "MIT",
++    "type": "library",
+     "keywords": [
+         "taxonomies",
+         "terms",
+@@ -15,35 +16,54 @@
+     "authors": [
+         {
+             "name"     : "Alexander Manfred Poellmann",
+-            "homepage" : "http://twitter.com/AMPoellmann",
+-            "role"     : "developer"
+-        },
+-        {
+-            "name"     : "Tyler Abbott",
+-            "homepage" : "https://twitter.com/webspecdesign",
++            "homepage" : "https://twitter.com/AMPoellmann",
+             "role"     : "developer"
+         }
+     ],
+     "require": {
+-        "php": "^7.3|^8.0",
+-        "illuminate/support"  : "^8.0",
+-        "illuminate/database" : "^8.0",
+-        "cviebrock/eloquent-sluggable" : "^8.0"
++        "php": "^8.0",
++        "cviebrock/eloquent-sluggable" : "^9.0|^10.0",
++        "illuminate/database": "^9.0|^10.0",
++        "illuminate/support": "^9.0|^10.0",
++        "webpatser/laravel-uuid": "^3.0|^4.0"
+     },
+     "require-dev": {
+-        "laravel/framework" : "^8.0",
+-        "mockery/mockery" : "^1.4.2",
+-        "phpunit/phpunit" : "^9.3.3",
+-        "doctrine/dbal": "^2.11"
++        "mockery/mockery": "^1.4",
++        "orchestra/testbench": "^7.0|^8.0",
++        "phpunit/phpunit": "^8.0|^9.0|^10.0"
+     },
+     "autoload": {
+         "psr-4": {
+-            "Lecturize\\Taxonomies\\" : "src/"
++            "Lecturize\\Taxonomies\\" : "src"
++        },
++        "files": [
++            "src/helpers.php"
++        ]
++    },
++    "autoload-dev": {
++        "psr-4": {
++            "Lecturize\\Taxonomies\\Tests\\": "tests"
+         }
+     },
++    "scripts": {
++        "taxonomies": "vendor/bin/phpunit",
++        "taxonomies-coverage": "vendor/bin/phpunit --coverage-html coverage"
++
++    },
++    "config": {
++        "sort-packages": true
++    },
+     "extra": {
++        "laravel": {
++            "providers": [
++                "Lecturize\\Taxonomies\\TaxonomiesServiceProvider"
++            ],
++            "aliases": {
++                "Taxonomy": "Lecturize\\Taxonomies\\Facades\\Taxonomy"
++            }
++        },
+         "branch-alias" : {
+-            "dev-master" : "0.0.x-dev"
++            "dev-master" : "1.3.x-dev"
+         }
+     },
+     "support" : {
+diff --git a/config/config.php b/config/config.php
+index bcba4d2..f336d7e 100644
+--- a/config/config.php
++++ b/config/config.php
+@@ -1,22 +1,43 @@
+ <?php
+ return [
+-    /*
++
++    /**
+      * Taxonomies
+      */
+     'taxonomies' => [
++
+         /*
+-         * Terms table
++         * Terms.
+          */
+-        'table_terms' => 'terms',
++
++        'terms' => [
++            'table' => 'terms',
++            'model' => \Lecturize\Taxonomies\Models\Term::class,
++        ],
+ 
+         /*
+-         * Taxonomies table
++         * Taxonomies.
+          */
+-        'table_taxonomies' => 'taxonomies',
++
++        'taxonomies' => [
++            'table' => 'taxonomies',
++            'model' => \Lecturize\Taxonomies\Models\Taxonomy::class,
++        ],
+ 
+         /*
+-         * Relationship table
++         * The "Taxable" pivot.
+          */
+-        'table_pivot' => 'taxables',
++
++        'pivot' => [
++            'table' => 'taxables',
++        ],
++
++        /*
++         * Cache settings.
++         */
++
++        'cache-expiry' => null, // set to null to use package default (one week)
++
+     ],
++
+ ];
+\ No newline at end of file
+diff --git a/database/migrations/add_meta_desc_to_taxonomies_table.php.stub b/database/migrations/add_meta_desc_to_taxonomies_table.php.stub
+new file mode 100644
+index 0000000..7cd274c
+--- /dev/null
++++ b/database/migrations/add_meta_desc_to_taxonomies_table.php.stub
+@@ -0,0 +1,29 @@
++<?php
++
++use Illuminate\Database\Migrations\Migration;
++use Illuminate\Database\Schema\Blueprint;
++use Illuminate\Support\Facades\Schema;
++
++class AddMetaDescToTaxonomiesTable extends Migration
++{
++    protected string $taxonomies;
++
++    public function __construct()
++    {
++        $this->taxonomies = config('lecturize.taxonomies.taxonomies.table', config('lecturize.taxonomies.taxonomies_table', 'taxonomies'));
++    }
++
++    public function up(): void
++    {
++        Schema::table($this->taxonomies, function(Blueprint $table) {
++            $table->text('meta_desc')->nullable()->after('lead');
++        });
++    }
++
++    public function down(): void
++    {
++        Schema::table($this->taxonomies, function(Blueprint $table) {
++            $table->dropColumn('meta_desc');
++        });
++    }
++}
+\ No newline at end of file
+diff --git a/database/migrations/add_primary_key_to_taxables_table.php.stub b/database/migrations/add_primary_key_to_taxables_table.php.stub
+new file mode 100644
+index 0000000..7dae4a0
+--- /dev/null
++++ b/database/migrations/add_primary_key_to_taxables_table.php.stub
+@@ -0,0 +1,29 @@
++<?php
++
++use Illuminate\Database\Migrations\Migration;
++use Illuminate\Database\Schema\Blueprint;
++use Illuminate\Support\Facades\Schema;
++
++class AddPrimaryKeyToTaxablesTable extends Migration
++{
++    protected string $pivot;
++
++    public function __construct()
++    {
++        $this->pivot = config('lecturize.taxonomies.pivot.table', config('lecturize.taxonomies.pivot_table', 'taxables'));
++    }
++
++    public function up(): void
++    {
++        Schema::table($this->pivot, function(Blueprint $table) {
++            $table->primary(['taxonomy_id', 'taxable_type', 'taxable_id']);
++        });
++    }
++
++    public function down(): void
++    {
++        Schema::table($this->pivot, function(Blueprint $table) {
++            $table->dropPrimary(['taxonomy_id', 'taxable_type', 'taxable_id']);
++        });
++    }
++}
+\ No newline at end of file
+diff --git a/database/migrations/add_timestamps_to_taxables_table.php.stub b/database/migrations/add_timestamps_to_taxables_table.php.stub
+new file mode 100644
+index 0000000..10253d8
+--- /dev/null
++++ b/database/migrations/add_timestamps_to_taxables_table.php.stub
+@@ -0,0 +1,29 @@
++<?php
++
++use Illuminate\Database\Migrations\Migration;
++use Illuminate\Database\Schema\Blueprint;
++use Illuminate\Support\Facades\Schema;
++
++class AddTimestampsToTaxablesTable extends Migration
++{
++    protected string $pivot;
++
++    public function __construct()
++    {
++        $this->pivot = config('lecturize.taxonomies.pivot.table', config('lecturize.taxonomies.pivot_table', 'taxables'));
++    }
++
++    public function up(): void
++    {
++        Schema::table($this->pivot, function(Blueprint $table) {
++            $table->timestamps();
++        });
++    }
++
++    public function down(): void
++    {
++        Schema::table($this->pivot, function(Blueprint $table) {
++            $table->dropTimestamps();
++        });
++    }
++}
+diff --git a/database/migrations/add_visibility_to_taxonomies_table.php.stub b/database/migrations/add_visibility_to_taxonomies_table.php.stub
+new file mode 100644
+index 0000000..6ef1987
+--- /dev/null
++++ b/database/migrations/add_visibility_to_taxonomies_table.php.stub
+@@ -0,0 +1,31 @@
++<?php
++
++use Illuminate\Database\Migrations\Migration;
++use Illuminate\Database\Schema\Blueprint;
++use Illuminate\Support\Facades\Schema;
++
++class AddVisibilityToTaxonomiesTable extends Migration
++{
++    protected string $taxonomies;
++
++    public function __construct()
++    {
++        $this->taxonomies = config('lecturize.taxonomies.taxonomies.table', config('lecturize.taxonomies.taxonomies_table', 'taxonomies'));
++    }
++
++    public function up(): void
++    {
++        Schema::table($this->taxonomies, function(Blueprint $table) {
++            $table->boolean('visible')->default(1)->after('sort');
++            $table->boolean('searchable')->default(1)->after('visible');
++        });
++    }
++
++    public function down(): void
++    {
++        Schema::table($this->taxonomies, function(Blueprint $table) {
++            $table->dropColumn('visible');
++            $table->dropColumn('searchable');
++        });
++    }
++}
+\ No newline at end of file
+diff --git a/database/migrations/create_taxonomies_table.php.stub b/database/migrations/create_taxonomies_table.php.stub
+index 75db68b..a49b93e 100644
+--- a/database/migrations/create_taxonomies_table.php.stub
++++ b/database/migrations/create_taxonomies_table.php.stub
+@@ -12,22 +12,22 @@ class CreateTaxonomiesTable extends Migration
+     /**
+      * Table names.
+      *
+-     * @var string  $table_terms       The terms table name.
+-     * @var string  $table_taxonomies  The taxonomies table name.
+-     * @var string  $table_pivot       The pivot table name.
++     * @var string  $terms       The terms table name.
++     * @var string  $taxonomies  The taxonomies table name.
++     * @var string  $pivot       The pivot table name.
+      */
+-    protected $table_terms;
+-    protected $table_taxonomies;
+-    protected $table_pivot;
++    protected $terms;
++    protected $taxonomies;
++    protected $pivot;
+ 
+     /**
+      * Create a new migration instance.
+      */
+     public function __construct()
+     {
+-        $this->table_terms      = config('lecturize.taxonomies.table_terms',      'terms');
+-        $this->table_taxonomies = config('lecturize.taxonomies.table_taxonomies', 'taxonomies');
+-        $this->table_pivot      = config('lecturize.taxonomies.table_pivot',      'taxables');
++        $this->terms      = config('lecturize.taxonomies.terms.table',      config('lecturize.taxonomies.terms_table',      'terms'));
++        $this->taxonomies = config('lecturize.taxonomies.taxonomies.table', config('lecturize.taxonomies.taxonomies_table', 'taxonomies'));
++        $this->pivot      = config('lecturize.taxonomies.pivot.table',      config('lecturize.taxonomies.pivot_table',      'taxables'));
+     }
+ 
+     /**
+@@ -37,7 +37,7 @@ class CreateTaxonomiesTable extends Migration
+      */
+     public function up()
+     {
+-        Schema::create($this->table_terms, function(Blueprint $table)
++        Schema::create($this->terms, function(Blueprint $table)
+         {
+             $table->increments('id');
+ 
+@@ -48,7 +48,7 @@ class CreateTaxonomiesTable extends Migration
+             $table->softDeletes();
+         });
+ 
+-        Schema::create($this->table_taxonomies, function(Blueprint $table)
++        Schema::create($this->taxonomies, function(Blueprint $table)
+         {
+              $table->increments('id');
+ 
+@@ -56,7 +56,7 @@ class CreateTaxonomiesTable extends Migration
+                   ->nullable()
+                   ->unsigned()
+                   ->references('id')
+-                  ->on($this->table_terms)
++                  ->on($this->terms)
+                   ->onDelete('cascade');
+ 
+             $table->string('taxonomy')->default('default');
+@@ -72,13 +72,13 @@ class CreateTaxonomiesTable extends Migration
+              $table->unique(['term_id', 'taxonomy']);
+         });
+ 
+-        Schema::create($this->table_pivot, function(Blueprint $table)
++        Schema::create($this->pivot, function(Blueprint $table)
+         {
+             $table->integer('taxonomy_id')
+                   ->nullable()
+                   ->unsigned()
+                   ->references('id')
+-                  ->on($this->table_taxonomies);
++                  ->on($this->taxonomies);
+ 
+             $table->nullableMorphs('taxable');
+         });
+@@ -91,8 +91,8 @@ class CreateTaxonomiesTable extends Migration
+      */
+     public function down()
+     {
+-        Schema::dropIfExists($this->table_pivot);
+-        Schema::dropIfExists($this->table_taxonomies);
+-        Schema::dropIfExists($this->table_terms);
++        Schema::dropIfExists($this->pivot);
++        Schema::dropIfExists($this->taxonomies);
++        Schema::dropIfExists($this->terms);
+     }
+ }
+\ No newline at end of file
+diff --git a/database/migrations/extend_taxonomies_tables.php.stub b/database/migrations/extend_taxonomies_tables.php.stub
+new file mode 100644
+index 0000000..badd799
+--- /dev/null
++++ b/database/migrations/extend_taxonomies_tables.php.stub
+@@ -0,0 +1,107 @@
++<?php
++
++use Illuminate\Support\Facades\DB;
++use Illuminate\Support\Facades\Schema;
++use Illuminate\Database\Schema\Blueprint;
++use Illuminate\Database\Migrations\Migration;
++
++/**
++ * Class ExtendTaxonomiesTables
++ */
++class ExtendTaxonomiesTables extends Migration
++{
++    /**
++     * Table names.
++     *
++     * @var string  $terms       The terms table name.
++     * @var string  $taxonomies  The taxonomies table name.
++     */
++    protected $terms;
++    protected $taxonomies;
++
++    /**
++     * Create a new migration instance.
++     */
++    public function __construct()
++    {
++        $this->terms      = config('lecturize.taxonomies.terms.table',      config('lecturize.taxonomies.terms_table',      'terms'));
++        $this->taxonomies = config('lecturize.taxonomies.taxonomies.table', config('lecturize.taxonomies.taxonomies_table', 'taxonomies'));
++    }
++
++    /**
++     * Run the migrations.
++     *
++     * @return void
++     */
++    public function up()
++    {
++        Schema::table($this->terms, function(Blueprint $table) {
++            $table->longText('content')->nullable()->after('slug');
++            $table->text('lead')->nullable()->after('content');
++
++            $table->renameColumn('name', 'title');
++        });
++
++        Schema::table($this->taxonomies, function(Blueprint $table) {
++            $table->uuid('uuid')->nullable()->after('id');
++
++            $table->integer('parent_id')->nullable()->unsigned()->index()->after('uuid');
++            $table->foreign('parent_id')
++                  ->references('id')
++                  ->on($this->taxonomies)
++                  ->onDelete('cascade');
++
++            $table->longText('content')->nullable()->after('desc');
++            $table->text('lead')->nullable()->after('content');
++
++            $table->json('properties')->nullable()->after('sort');
++
++            $table->renameColumn('desc', 'description');
++        });
++
++        DB::table($this->taxonomies)->where('parent', '>', 0)->update([
++            'parent_id' => DB::raw('parent')
++        ]);
++
++        Schema::table($this->taxonomies, function(Blueprint $table) {
++            $table->dropColumn('parent');
++        });
++    }
++
++    /**
++     * Reverse the migrations.
++     *
++     * @return void
++     */
++    public function down()
++    {
++        Schema::table($this->terms, function(Blueprint $table) {
++            $table->dropColumn('content');
++            $table->dropColumn('lead');
++
++            $table->renameColumn('title', 'name');
++        });
++
++        Schema::table($this->taxonomies, function(Blueprint $table) {
++            $table->dropColumn('uuid');
++
++            $table->integer('parent')->unsigned()->default(0)->after('description');
++
++            $table->dropColumn('content');
++            $table->dropColumn('lead');
++
++            $table->dropColumn('properties');
++
++            $table->renameColumn('description', 'desc');
++        });
++
++        DB::table($this->taxonomies)->where('parent_id', '!=', null)->update([
++            'parent' => DB::raw('parent_id')
++        ]);
++
++        Schema::table($this->taxonomies, function(Blueprint $table) {
++            $table->dropForeign(['parent_id']);
++            $table->dropColumn('parent_id');
++        });
++    }
++}
+\ No newline at end of file
+diff --git a/resources/lang/de/core.php b/resources/lang/de/core.php
+new file mode 100644
+index 0000000..ddcce3d
+--- /dev/null
++++ b/resources/lang/de/core.php
+@@ -0,0 +1,7 @@
++<?php
++
++return [
++
++    //
++
++];
+\ No newline at end of file
+diff --git a/resources/lang/de/taxonomy.php b/resources/lang/de/taxonomy.php
+new file mode 100644
+index 0000000..ddcce3d
+--- /dev/null
++++ b/resources/lang/de/taxonomy.php
+@@ -0,0 +1,7 @@
++<?php
++
++return [
++
++    //
++
++];
+\ No newline at end of file
+diff --git a/resources/lang/de/term.php b/resources/lang/de/term.php
+new file mode 100644
+index 0000000..ddcce3d
+--- /dev/null
++++ b/resources/lang/de/term.php
+@@ -0,0 +1,7 @@
++<?php
++
++return [
++
++    //
++
++];
+\ No newline at end of file
+diff --git a/resources/lang/en/core.php b/resources/lang/en/core.php
+new file mode 100644
+index 0000000..ddcce3d
+--- /dev/null
++++ b/resources/lang/en/core.php
+@@ -0,0 +1,7 @@
++<?php
++
++return [
++
++    //
++
++];
+\ No newline at end of file
+diff --git a/resources/lang/en/taxonomy.php b/resources/lang/en/taxonomy.php
+new file mode 100644
+index 0000000..ddcce3d
+--- /dev/null
++++ b/resources/lang/en/taxonomy.php
+@@ -0,0 +1,7 @@
++<?php
++
++return [
++
++    //
++
++];
+\ No newline at end of file
+diff --git a/resources/lang/en/term.php b/resources/lang/en/term.php
+new file mode 100644
+index 0000000..ddcce3d
+--- /dev/null
++++ b/resources/lang/en/term.php
+@@ -0,0 +1,7 @@
++<?php
++
++return [
++
++    //
++
++];
+\ No newline at end of file
+diff --git a/src/Contracts/CanHaveCategories.php b/src/Contracts/CanHaveCategories.php
+new file mode 100644
+index 0000000..8ef991c
+--- /dev/null
++++ b/src/Contracts/CanHaveCategories.php
+@@ -0,0 +1,15 @@
++<?php
++
++namespace Lecturize\Taxonomies\Contracts;
++
++use Illuminate\Database\Eloquent\Relations\MorphToMany;
++
++/**
++ * Interface CanHaveCategories
++ * @package Lecturize\Taxonomies\Contracts
++ */
++interface CanHaveCategories
++{
++    /** @return MorphToMany */
++    public function taxonomies(): MorphToMany;
++}
+\ No newline at end of file
+diff --git a/src/Contracts/TaxableInterface.php b/src/Contracts/TaxableInterface.php
+deleted file mode 100644
+index bac86a8..0000000
+--- a/src/Contracts/TaxableInterface.php
++++ /dev/null
+@@ -1,14 +0,0 @@
+-<?php namespace Lecturize\Taxonomies\Contracts;
+-
+-interface TaxableInterface
+-{
+-    /**
+-     * @return mixed
+-     */
+-     public function taxed();
+-
+-    /**
+-     * @return mixed
+-     */
+-     public function taxonomies();
+-}
+\ No newline at end of file
+diff --git a/src/Facades/Taxonomy.php b/src/Facades/Taxonomy.php
+index 9c62f64..70512ae 100644
+--- a/src/Facades/Taxonomy.php
++++ b/src/Facades/Taxonomy.php
+@@ -1,13 +1,24 @@
+-<?php namespace Lecturize\Taxonomies\Facades;
++<?php
+ 
++namespace Lecturize\Taxonomies\Facades;
++
++use Illuminate\Support\Collection;
+ use Illuminate\Support\Facades\Facade;
+ 
++use Lecturize\Taxonomies\Models\Taxonomy as TaxonomyModel;
++
++/**
++ * Class Taxonomy
++ * @package Lecturize\Taxonomies\Facades
++ *
++ * @method static Collection createCategories(string|array $categories, string $taxonomy, TaxonomyModel $parent = null, int $sort = null)
++ * @method static Collection getTree(string $taxonomy, string $taxable_class = '', boolean $cached = true)
++ * @method static Collection buildTree( Collection $taxonomies, string $taxable_class, boolean $is_child = false)
++ */
+ class Taxonomy extends Facade
+ {
+-     /**
+-     * @inheritdoc
+-      */
+-     protected static function getFacadeAccessor()
++     /** @inheritdoc */
++     protected static function getFacadeAccessor(): string
+      {
+           return 'taxonomies';
+      }
+diff --git a/src/Models/Taxable.php b/src/Models/Taxable.php
+deleted file mode 100644
+index 3fde1b7..0000000
+--- a/src/Models/Taxable.php
++++ /dev/null
+@@ -1,45 +0,0 @@
+-<?php namespace Lecturize\Taxonomies\Models;
+-
+-use Illuminate\Database\Eloquent\Model;
+-
+-/**
+- * Class Taxable
+- * @package Lecturize\Taxonomies\Models
+- */
+-class Taxable extends Model
+-{
+-    /**
+-     * @inheritdoc
+-     */
+-    protected $fillable = [
+-        'taxonomy_id',
+-        'taxable_id',
+-        'taxable_type'
+-    ];
+-
+-    /**
+-     * @inheritdoc
+-     */
+-    public function __construct(array $attributes = [])
+-    {
+-        parent::__construct($attributes);
+-
+-        $this->table = config('lecturize.taxonomies.table_pivot','taxables');
+-    }
+-
+-    /**
+-     * @return \Illuminate\Database\Eloquent\Relations\MorphTo
+-     */
+-    public function taxable()
+-    {
+-        return $this->morphTo();
+-    }
+-
+-    /**
+-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
+-     */
+-    public function taxonomy()
+-    {
+-        return $this->belongsTo(Taxonomy::class, 'taxonomy_id', 'id');
+-    }
+-}
+\ No newline at end of file
+diff --git a/src/Models/Taxonomy.php b/src/Models/Taxonomy.php
+index 887710d..62ae52b 100644
+--- a/src/Models/Taxonomy.php
++++ b/src/Models/Taxonomy.php
+@@ -1,120 +1,337 @@
+-<?php namespace Lecturize\Taxonomies\Models;
++<?php
+ 
++namespace Lecturize\Taxonomies\Models;
++
++use Illuminate\Database\Eloquent\Builder;
++use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+ use Illuminate\Database\Eloquent\Model;
++use Illuminate\Database\Eloquent\Relations\BelongsTo;
++use Illuminate\Database\Eloquent\Relations\HasMany;
+ use Illuminate\Database\Eloquent\SoftDeletes;
++use Illuminate\Support\Collection;
++use Webpatser\Uuid\Uuid;
+ 
+ /**
+  * Class Taxonomy
+  * @package Lecturize\Taxonomies\Models
++ * @property int                            $id
++ * @property string                         $uuid
++ * @property string|null                    $parent_id
++ * @property Taxonomy|null                  $parent
++ * @property EloquentCollection|Taxonomy[]  $children
++ * @property EloquentCollection|Taxonomy[]  $siblings
++ * @property EloquentCollection|Model[]     $taxables
++ * @property string|null                    $alias_id
++ * @property Taxonomy|null                  $alias
++ * @property string                         $term_id
++ * @property Term                           $term
++ * @property string                         $taxonomy
++ * @property string|null                    $description
++ * @property string|null                    $content
++ * @property string|null                    $lead
++ * @property string|null                    $meta_desc
++ * @property bool                           $visible
++ * @property bool                           $searchable
++ * @property int|null                       $sort
++ * @property array|null                     $properties
++ *
++ * @method static Builder|Taxonomy taxonomy(string $taxonomy)
++ * @method static Builder|Taxonomy taxonomyStartsWith(string $taxonomy_prefix)
++ * @method static Builder|Taxonomy taxonomies(array $taxonomies)
++ * @method static Builder|Taxonomy byTerm(string|int $term, string $term_field)
++ * @method static Builder|Taxonomy search(string $term, string $taxonomy)
++ * @method static Builder|Taxonomy visible()
++ * @method static Builder|Taxonomy searchable()
+  */
+ class Taxonomy extends Model
+ {
+     use SoftDeletes;
+ 
+-    /**
+-     * @inheritdoc
+-     */
++    /** @inheritdoc */
+     protected $fillable = [
++        'parent_id',
++        'alias_id',
+         'term_id',
+         'taxonomy',
+-        'desc',
+-        'parent',
++
++        'description',
++        'content',
++        'lead',
++        'meta_desc',
++
+         'sort',
++        'visible',
++        'searchable',
++
++        'properties',
++    ];
++
++    /** @inheritdoc */
++    protected $casts = [
++        'visible'    => 'boolean',
++        'searchable' => 'boolean',
++        'properties' => 'array',
++
++        'deleted_at' => 'datetime',
++    ];
++
++    /** @inheritdoc */
++    protected $with = [
++        'term',
+     ];
+ 
++    /** @inheritdoc */
++    public function __construct(array $attributes = [])
++    {
++        parent::__construct($attributes);
++
++        $this->table = config('lecturize.taxonomies.taxonomies.table', 'taxonomies');
++    }
++
++    /** @inheritdoc */
++    protected static function boot()
++    {
++        parent::boot();
++
++        static::creating(function (Taxonomy $model) {
++            if ($model->getConnection()
++                      ->getSchemaBuilder()
++                      ->hasColumn($model->getTable(), 'uuid'))
++                $model->uuid = Uuid::generate()->string;
++        });
++
++        static::saving(function (Taxonomy $model) {
++            if (isset($model->term) && $model->term->title && ! $model->description)
++                $model->description = $model->term->title;
++
++            if (! $model->sort) {
++                $sort = ($siblings = $model->siblings()->get()) ? $siblings->max('sort') : 0;
++                $model->sort = ($sort + 1);
++            }
++        });
++    }
++
+     /**
+-     * @inheritdoc
++     * Get the term, that will be displayed as these taxonomies (categories) title.
++     *
++     * @return BelongsTo
+      */
+-    protected $dates = ['deleted_at'];
++    public function term(): BelongsTo
++    {
++        return $this->belongsTo(config('lecturize.taxonomies.terms.model', Term::class));
++    }
+ 
+     /**
+-     * @inheritdoc
++     * Get the parent taxonomy (categories).
++     *
++     * @return BelongsTo
+      */
+-    public function __construct(array $attributes = [])
++    public function parent(): BelongsTo
+     {
+-        parent::__construct($attributes);
++        return $this->belongsTo(config('lecturize.taxonomies.taxonomies.model', Taxonomy::class), 'parent_id');
++    }
+ 
+-        $this->table = config('lecturize.taxonomies.table_taxonomies', 'taxonomies');
++    /**
++     * Get the children taxonomies (categories).
++     *
++     * @return HasMany
++     */
++    public function children(): HasMany
++    {
++        return $this->hasMany(config('lecturize.taxonomies.taxonomies.model', Taxonomy::class), 'parent_id');
+     }
+ 
+     /**
+-     * Get the term this taxonomy belongs to.
++     * Get the children taxonomies (categories).
+      *
+-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
++     * @return Builder
+      */
+-    public function term() {
+-        return $this->belongsTo(Term::class);
++    public function siblings(): Builder
++    {
++        $class = config('lecturize.taxonomies.taxonomies.model', Taxonomy::class);
++        return (new $class)->taxonomy($this->taxonomy)
++                           ->where('parent_id', $this->parent_id)
++                           ->orderBy('sort');
+     }
+ 
+     /**
+-     * Get the parent taxonomy.
++     * Get the parent taxonomy (categories).
+      *
+-     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
++     * @return BelongsTo
+      */
+-    public function parent()
++    public function alias(): BelongsTo
+     {
+-        return $this->belongsTo(Taxonomy::class, 'parent');
++        return $this->belongsTo(config('lecturize.taxonomies.taxonomies.model', Taxonomy::class), 'alias_id');
+     }
+ 
+     /**
+-     * Get the children taxonomies.
++     * Get the breadcrumbs for this Taxonomy.
+      *
+-     * @return \Illuminate\Database\Eloquent\Relations\HasMany
++     * @param  bool  $exclude_self
++     * @return Collection
+      */
+-    public function children()
++    public function getBreadcrumbs(bool $exclude_self = true): Collection
+     {
+-        return $this->hasMany(Taxonomy::class, 'parent');
++        $key = "taxonomies.$this->id.breadcrumbs";
++        $key.= $exclude_self ? '.self-excluded' : '';
++
++        return maybe_tagged_cache(['taxonomies', 'taxonomies:taxonomy', "taxonomies:taxonomy:$this->id"])->rememberForever($key, function() use($exclude_self) {
++            $parameters = $this->getParentBreadcrumbs();
++
++            if (! $exclude_self)
++                $parameters->push($this->taxonomy);
++
++            return $parameters->reverse()->values();
++        });
+     }
+ 
+     /**
+-     * An example for a related posts model.
++     * Add parent breadcrumb.
+      *
+-     * @return \Illuminate\Database\Eloquent\Relations\MorphToMany
++     * @param  Collection|null  $parameters
++     * @return Collection
+      */
+-    public function posts()
++    function getParentBreadcrumbs(?Collection $parameters = null): Collection
+     {
+-        return $this->morphedByMany('App\Models\Posts\Post', 'taxable', 'taxables');
++        if ($parameters === null)
++            $parameters = collect();
++
++        $parameters->push([
++            'title'  => $this->term->title,
++            'slug'   => $this->term->slug,
++            'params' => $this->getRouteParameters(),
++        ]);
++
++        if ($parent = $this->parent)
++            return $parent->getParentBreadcrumbs($parameters);
++
++        return $parameters;
+     }
+ 
+     /**
+-     * Scope taxonomies.
++     * Get route parameters.
+      *
+-     * @param  object  $query
+-     * @param  string  $taxonomy
+-     * @return mixed
++     * @param  bool  $exclude_taxonomy
++     * @return array
+      */
+-    public function scopeTaxonomy($query, $taxonomy)
++    public function getRouteParameters(bool $exclude_taxonomy = true): array
++    {
++        $key = "taxonomies.$this->id.route-parameters";
++        $key.= $exclude_taxonomy ? '.without-taxonomy' : '';
++
++        return maybe_tagged_cache(['taxonomies', 'taxonomies:taxonomy', "taxonomies:taxonomy:$this->id"])->rememberForever($key, function() use($exclude_taxonomy) {
++            $parameters = $this->getParentSlugs();
++
++            if (! $exclude_taxonomy)
++                $parameters[] = $this->taxonomy;
++
++            return array_reverse($parameters);
++        });
++    }
++
++    /**
++     * Get slugs of parent terms.
++     *
++     * @param  array  $parameters
++     * @return array
++     */
++    function getParentSlugs(array $parameters = []): array
++    {
++        $parameters[] = $this->term->slug;
++
++        if ($parent = $this->parent)
++            return $parent->getParentSlugs($parameters);
++
++        return $parameters;
++    }
++
++    /**
++     * Scope by a given taxonomy (e.g. "blog_cat" for blog posts or "shop_cat" for shop products).
++     *
++     * @param  Builder  $query
++     * @param  string   $taxonomy
++     * @return Builder
++     */
++    public function scopeTaxonomy(Builder $query, string $taxonomy): Builder
+     {
+         return $query->where('taxonomy', $taxonomy);
+     }
+ 
+     /**
+-     * Scope terms.
++     * Scope by a given taxonomy prefix (e.g. to retrieve both "shop_cat_a" and "shop_cat_b" you would scope "shop_cat%").
+      *
+-     * @param  object  $query
+-     * @param  string  $term
+-     * @param  string  $taxonomy
+-     * @return mixed
++     * @param  Builder  $query
++     * @param  string   $taxonomy_prefix
++     * @return Builder
+      */
+-    public function scopeTerm($query, $term, $taxonomy = 'major')
++    public function scopeTaxonomyStartsWith(Builder $query, string $taxonomy_prefix): Builder
+     {
+-        return $query->whereHas('term', function($q) use($term, $taxonomy) {
+-            $q->where('name', $term);
++        return $query->where('taxonomy', 'like', "$taxonomy_prefix%");
++    }
++
++    /**
++     * Scope by given taxonomies array, e.g. ['shop_cat_a', 'shop_cat_b'].
++     *
++     * @param  Builder  $query
++     * @param  array    $taxonomies
++     * @return Builder
++     */
++    public function scopeTaxonomies(Builder $query, array $taxonomies): Builder
++    {
++        return $query->whereIn('taxonomy', $taxonomies);
++    }
++
++    /**
++     * Scope terms (category title) by given taxonomy.
++     *
++     * @param  Builder     $query
++     * @param  string|int  $term
++     * @param  string      $term_field
++     * @return Builder
++     */
++    public function scopeByTerm(Builder $query, string|int $term, string $term_field = 'title'): Builder
++    {
++        $term_field = ! in_array($term_field, ['id', 'title', 'slug']) ? 'title' : $term_field;
++
++        return $query->whereHas('term', function(Builder $q) use($term, $term_field) {
++            $q->where($term_field, $term);
+         });
+     }
+ 
+     /**
+      * A simple search scope.
+      *
+-     * @param  object  $query
+-     * @param  string  $searchTerm
+-     * @param  string  $taxonomy
+-     * @return mixed
++     * @param  Builder  $query
++     * @param  string   $term
++     * @param  string   $taxonomy
++     * @return Builder
+      */
+-    public function scopeSearch($query, $searchTerm, $taxonomy = 'major')
++    public function scopeSearch(Builder $query, string $term, string $taxonomy): Builder
+     {
+-        return $query->whereHas('term', function($q) use($searchTerm, $taxonomy) {
+-            $q->where('name', 'like', '%'. $searchTerm .'%');
++        return $query->whereHas('term', function(Builder $q) use($term, $taxonomy) {
++            $q->where('title', 'like', '%'. $term .'%');
+         });
+     }
+-}
+\ No newline at end of file
++
++    /**
++     * Scope visible taxonomies.
++     *
++     * @param  Builder  $query
++     * @return Builder
++     */
++    public function scopeVisible(Builder $query): Builder
++    {
++        return $query->where('visible', 1);
++    }
++
++    /**
++     * Scope searchable taxonomies.
++     *
++     * @param  Builder  $query
++     * @return Builder
++     */
++    public function scopeSearchable(Builder $query): Builder
++    {
++        return $query->where('searchable', 1);
++    }
++}
+diff --git a/src/Models/Term.php b/src/Models/Term.php
+index 2a771bb..3245242 100644
+--- a/src/Models/Term.php
++++ b/src/Models/Term.php
+@@ -1,122 +1,74 @@
+-<?php namespace Lecturize\Taxonomies\Models;
++<?php
+ 
+-use Cviebrock\EloquentSluggable\Sluggable;
++namespace Lecturize\Taxonomies\Models;
+ 
++use Illuminate\Database\Eloquent\Collection;
+ use Illuminate\Database\Eloquent\Model;
++use Illuminate\Database\Eloquent\Relations\HasMany;
+ use Illuminate\Database\Eloquent\SoftDeletes;
++use Illuminate\Support\Str;
++
++use Cviebrock\EloquentSluggable\Sluggable;
+ 
+ /**
+  * Class Term
+  * @package Lecturize\Taxonomies\Models
++ * @property int                    $id
++ * @property string                 $title
++ * @property string|null            $slug
++ * @property string|null            $content
++ * @property string|null            $lead
++ * @property Collection|Taxonomy[]  $taxonomies
+  */
+ class Term extends Model
+ {
+     use Sluggable;
+     use SoftDeletes;
+ 
+-    /**
+-     * @inheritdoc
+-     */
++    /** @inheritdoc */
+     protected $fillable = [
+-        'name',
++        'title',
+         'slug',
++        'content',
++        'lead',
+     ];
+ 
+-    /**
+-     * @inheritdoc
+-     */
+-    protected $dates = ['deleted_at'];
++    /** @inheritdoc */
++    protected $casts = [
++        'deleted_at' => 'datetime',
++    ];
+ 
+-    /**
+-     * @inheritdoc
+-     */
++    /** @inheritdoc */
+     public function __construct(array $attributes = [])
+     {
+         parent::__construct($attributes);
+ 
+-        $this->table = config('lecturize.taxonomies.table_terms', 'terms');
+-    }
+-
+-    /**
+-     * @inheritdoc
+-     */
+-    public function sluggable() : array
+-    {
+-        return [
+-            'slug' => [
+-                'source' => 'name'
+-            ]
+-        ];
+-    }
+-
+-    /**
+-     * @return \Illuminate\Database\Eloquent\Relations\MorphMany
+-     */
+-    public function taxable() {
+-        return $this->morphMany(Taxable::class, 'taxable');
+-    }
+-
+-    /**
+-     * Get the taxonomies this term belongs to.
+-     *
+-     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+-     */
+-    public function taxonomies() {
+-        return $this->hasMany(Taxonomy::class);
++        $this->table = config('lecturize.taxonomies.terms.table', 'terms');
+     }
+ 
+-    /**
+-     * Get display name.
+-     *
+-     * @param  string  $locale
+-     * @param  int     $limit
+-     * @return mixed
+-     */
+-    public function getDisplayName($locale = '', $limit = 0)
+-    {
+-        $locale = $locale ?: app()->getLocale();
+-
+-        $property_with_locale = $locale === 'en' ? "name" : "name_$locale";
+-
+-        $name = property_exists($this, $property_with_locale) ? $this->{$property_with_locale} : $this->name;
+-
+-        return $limit > 0 ? str_limit($name, $limit) : $name;
++    /** @inheritdoc */
++    public function sluggable(): array {
++        return ['slug' => ['source' => 'title']];
+     }
+ 
+     /**
+-     * Get route parameters.
++     * Get the taxonomies (categories) this term belongs to.
+      *
+-     * @param  string  $taxonomy
+-     * @return mixed
++     * @return HasMany
+      */
+-    public function getRouteParameters($taxonomy)
++    public function taxonomies(): HasMany
+     {
+-        $taxonomy = Taxonomy::taxonomy($taxonomy)
+-                            ->term($this->name)
+-                            ->with('parent')
+-                            ->first();
+-
+-        $parameters = $this->getParentSlugs($taxonomy);
+-
+-        array_push($parameters, $taxonomy->taxonomy);
+-
+-        return array_reverse($parameters);
++        return $this->hasMany(config('lecturize.taxonomies.taxonomies.model', Taxonomy::class));
+     }
+ 
+     /**
+-     * Get slugs of parent terms.
++     * Get display title.
+      *
+-     * @param  Taxonomy  $taxonomy
+-     * @param  array     $parameters
+-     * @return array
++     * @param  int  $limit
++     * @return string
+      */
+-    function getParentSlugs(Taxonomy $taxonomy, $parameters = [])
++    public function getDisplayTitle(int $limit = 0): string
+     {
+-        array_push($parameters, $taxonomy->term->slug);
+-
+-        if (($parents = $taxonomy->parent()) && ($parent = $parents->first()))
+-            return $this->getParentSlugs($parent, $parameters);
+-
+-        return $parameters;
++        return $limit > 0 ? Str::slug($this->title, $limit) : $this->title;
+     }
+ }
+diff --git a/src/TaxableUtils.php b/src/TaxableUtils.php
+deleted file mode 100644
+index 6293082..0000000
+--- a/src/TaxableUtils.php
++++ /dev/null
+@@ -1,90 +0,0 @@
+-<?php namespace Lecturize\Taxonomies;
+-
+-use Lecturize\Taxonomies\Models\Taxonomy;
+-use Lecturize\Taxonomies\Models\Term;
+-
+-/**
+- * Class TaxableUtils
+- * @package Lecturize\Taxonomies
+- */
+-class TaxableUtils
+-{
+-    /**
+-     * @param mixed    $terms
+-     * @param string   $taxonomy
+-     * @param integer  $parent
+-     * @param integer  $order
+-     */
+-    public function createTaxables($terms, $taxonomy, $parent = 0, $order = 0)
+-     {
+-          $terms = $this->makeTermsArray($terms);
+-
+-          $this->createTerms($terms);
+-          $this->createTaxonomies($terms, $taxonomy, $parent, $order);
+-     }
+-
+-    /**
+-     * @param array $terms
+-     */
+-    public static function createTerms(array $terms)
+-     {
+-          if (count($terms) > 0) {
+-               $found = Term::whereIn('name', $terms)->pluck('name')->all();
+-
+-               if (! is_array($found))
+-                    $found = [];
+-
+-               foreach (array_diff($terms, $found) as $name) {
+-                    if (Term::where('name', $name)->first())
+-                         continue;
+-
+-                    $term = new Term;
+-                    $term->name = $name;
+-                    $term->save();
+-               }
+-          }
+-     }
+-
+-    /**
+-     * @param array    $terms
+-     * @param string   $taxonomy
+-     * @param integer  $parent
+-     * @param integer  $order
+-     */
+-    public static function createTaxonomies(array $terms, $taxonomy, $parent = 0, $order = 0)
+-     {
+-          if (count($terms) > 0) {
+-               // only keep terms with existing entries in terms table
+-               $terms = Term::whereIn('name', $terms)->pluck('name')->all();
+-
+-               // create taxonomy entries for given terms
+-               foreach ($terms as $term) {
+-                    $term_id = Term::where('name', $term)->first()->id;
+-
+-                    if (Taxonomy::where('taxonomy', $taxonomy)->where('term_id', $term_id)->where('parent', $parent)->where('sort', $order)->first())
+-                         continue;
+-
+-                    $model = new Taxonomy;
+-                    $model->taxonomy = $taxonomy;
+-                    $model->term_id  = $term_id;
+-                    $model->parent   = $parent;
+-                    $model->sort     = $order;
+-                    $model->save();
+-               }
+-          }
+-     }
+-
+-     /**
+-      * @param  string|array  $terms
+-      * @return array
+-      */
+-     public static function makeTermsArray($terms) {
+-          if (is_array($terms)) {
+-               return $terms;
+-          } else if (is_string($terms)) {
+-               return explode('|', $terms);
+-          }
+-
+-          return (array) $terms;
+-     }
+-}
+\ No newline at end of file
+diff --git a/src/TaxonomiesServiceProvider.php b/src/TaxonomiesServiceProvider.php
+index 5c196a9..3881e5b 100644
+--- a/src/TaxonomiesServiceProvider.php
++++ b/src/TaxonomiesServiceProvider.php
+@@ -1,44 +1,37 @@
+-<?php namespace Lecturize\Taxonomies;
++<?php
++
++namespace Lecturize\Taxonomies;
+ 
+ use Illuminate\Support\ServiceProvider;
+ 
+ class TaxonomiesServiceProvider extends ServiceProvider
+ {
+-    protected $migrations = [
+-        'CreateTaxonomiesTable' => 'create_taxonomies_table'
++    protected array $migrations = [
++        'CreateTaxonomiesTable'          => 'create_taxonomies_table',
++        'ExtendTaxonomiesTables'         => 'extend_taxonomies_tables',
++        'AddVisibilityToTaxonomiesTable' => 'add_visibility_to_taxonomies_table',
++        'AddMetaDescToTaxonomiesTable'   => 'add_meta_desc_to_taxonomies_table',
++        'AddPrimaryKeyToTaxablesTable'   => 'add_primary_key_to_taxables_table',
++        'AddTimestampsToTaxablesTable'   => 'add_timestamps_to_taxables_table',
+     ];
+ 
+-     /**
+-     * @inheritdoc
+-      */
+      public function boot()
+      {
+         $this->handleConfig();
+         $this->handleMigrations();
+-     }
+ 
+-     /**
+-     * @inheritdoc
+-      */
+-     public function register()
+-     {
+-         //
++         $this->loadTranslationsFrom(__DIR__ .'/../resources/lang', 'taxonomies');
+      }
+ 
+-     /**
+-     * @inheritdoc
+-      */
+-     public function provides()
++    /** @inheritdoc */
++     public function register()
+      {
+-          return [];
++         $this->app->singleton('taxonomies', function ($app) {
++             return new Taxonomy($app);
++         });
+      }
+ 
+-    /**
+-     * Publish and merge the config file.
+-     *
+-     * @return void
+-     */
+-    private function handleConfig()
++    private function handleConfig(): void
+     {
+         $configPath = __DIR__ . '/../config/config.php';
+ 
+@@ -47,22 +40,20 @@ class TaxonomiesServiceProvider extends ServiceProvider
+         $this->mergeConfigFrom($configPath, 'lecturize');
+     }
+ 
+-    /**
+-     * Publish migrations.
+-     *
+-     * @return void
+-     */
+-    private function handleMigrations()
++    private function handleMigrations(): void
+     {
++        $count = 0;
+         foreach ($this->migrations as $class => $file) {
+             if (! class_exists($class)) {
+-                $timestamp = date('Y_m_d_His', time());
++                $timestamp = date('Y_m_d_Hi'. sprintf('%02d', $count), time());
+ 
+                 $this->publishes([
+                     __DIR__ .'/../database/migrations/'. $file .'.php.stub' =>
+                         database_path('migrations/'. $timestamp .'_'. $file .'.php')
+                 ], 'migrations');
++
++                $count++;
+             }
+         }
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/src/Taxonomy.php b/src/Taxonomy.php
+new file mode 100644
+index 0000000..35f516b
+--- /dev/null
++++ b/src/Taxonomy.php
+@@ -0,0 +1,208 @@
++<?php
++
++namespace Lecturize\Taxonomies;
++
++use Exception;
++use Illuminate\Contracts\Foundation\Application;
++use Illuminate\Support\Collection;
++use Illuminate\Support\Str;
++
++use Lecturize\Taxonomies\Models\Taxonomy as TaxonomyModel;
++use Lecturize\Taxonomies\Models\Term;
++
++/**
++ * Class Taxonomy
++ * @package Lecturize\Taxonomies
++ */
++class Taxonomy
++{
++    protected Application $app;
++
++    public function __construct(Application $app)
++    {
++        $this->app = $app;
++    }
++
++    /**
++     * Creates terms and taxonomies.
++     *
++     * @param  string|array        $categories
++     * @param  string              $taxonomy
++     * @param  TaxonomyModel|null  $parent
++     * @param  int|null            $sort
++     * @return Collection
++     */
++    public static function createCategories(string|array $categories, string $taxonomy, ?TaxonomyModel $parent = null, ?int $sort = null): Collection
++    {
++        if (is_string($categories))
++            $categories = explode('|', $categories);
++
++        $terms      = collect();
++        $taxonomies = collect();
++
++        if (count($categories) > 0)
++            foreach ($categories as $category)
++                $terms->push(Term::firstOrCreate(['title' => $category]));
++
++        foreach ($terms as $term) {
++            $tax = TaxonomyModel::firstOrNew([
++                'term_id'  => $term->id,
++                'taxonomy' => $taxonomy,
++            ]);
++
++            if ($tax) {
++                if ($parent instanceof TaxonomyModel && $tax->parent_id !== $parent->id)
++                    $tax->parent_id = $parent->id;
++
++                if (is_integer($sort) && $tax->sort !== $sort)
++                    $tax->sort = $sort;
++
++                $tax->save();
++
++                $taxonomies->push($tax);
++            }
++        }
++
++        return $taxonomies;
++    }
++
++    /**
++     * Get the category tree for the given taxonomy.
++     *
++     * @param  string|array  $taxonomy          Either the taxonomy, a taxonomy array or a taxonomy prefix suffixed with % (percent).
++     * @param  string        $taxable_relation  A relationship method on a custom Taxonomy model, if a class is given we'll try to guess a relationship method of it.
++     * @param  string        $taxable_callback
++     * @param  bool          $cached
++     * @return Collection
++     */
++    public static function getTree(string|array $taxonomy, string $taxable_relation = '', string $taxable_callback = '', bool $cached = true): Collection
++    {
++        $prefix = null;
++
++        if (is_array($taxonomy)) {
++            $taxonomy   = array_filter(array_map('trim', $taxonomy));
++            $taxonomies = implode('-', $taxonomy);
++
++            $key = "taxonomies.$taxonomies.tree";
++
++        } elseif (str_ends_with($taxonomy, '%')) {
++            $prefix = str_replace('%', '', $taxonomy);
++
++            $key = "taxonomies.prefixed-$prefix.tree";
++
++        } else {
++            $key = "taxonomies.$taxonomy.tree";
++        }
++
++        $key.= $taxable_relation ? '.'. Str::slug($taxable_relation) : '';
++        $key.= $taxable_callback ? '.filter-'. Str::slug($taxable_callback) : '';
++
++        if (! $cached)
++            cache()->forget($key);
++
++        return maybe_tagged_cache(['taxonomies', 'taxonomies:tree'])->remember($key, config('lecturize.taxonomies.cache-expiry', now()->addWeek()), function() use($taxonomy, $prefix, $taxable_relation, $taxable_callback) {
++            $taxonomy_model = app(config('lecturize.taxonomies.taxonomies.model', Taxonomy::class));
++
++            if ($prefix) {
++                $taxonomies = $taxonomy_model::with('parent', 'children')
++                                             ->taxonomyStartsWith($prefix)
++                                             ->get();
++
++            } elseif (is_array($taxonomy)) {
++                $taxonomies = $taxonomy_model::with('parent', 'children')
++                                             ->taxonomies($taxonomy)
++                                             ->get();
++
++            } else {
++                $taxonomies = $taxonomy_model::with('parent', 'children')
++                                             ->taxonomy($taxonomy)
++                                             ->get();
++            }
++
++            return self::buildTree($taxonomies, $taxable_relation, $taxable_callback);
++        });
++    }
++
++    /**
++     * Start a new category tree branch.
++     *
++     * @param  Collection  $taxonomies
++     * @param  string      $taxable_relation
++     * @param  string      $taxable_callback
++     * @param  boolean     $is_child
++     * @return Collection
++     */
++    public static function buildTree(Collection $taxonomies, string $taxable_relation = '', string $taxable_callback = '', bool $is_child = false): Collection
++    {
++        $terms = collect();
++
++        $relation = '';
++
++        if ($taxable_relation) {
++            if (str_contains($taxable_relation, '\\')) {
++                $relation = strtolower(substr($taxable_relation, strrpos($taxable_relation, '\\') + 1));
++                $relation = Str::plural($relation);
++            } else {
++                $relation = $taxable_relation;
++            }
++
++            $taxonomies->load($relation);
++        }
++
++        /** @var \Lecturize\Taxonomies\Models\Taxonomy $taxonomy */
++        foreach ($taxonomies->sortBy('sort') as $taxonomy) {
++            if (! $is_child && ! is_null($taxonomy->parent_id))
++                continue;
++
++            $children_count = 0;
++
++            if ($children = $taxonomy->children) {
++                if (($children_count = $children->count()) > 0) {
++                    $children->load('parent', 'children');
++                    $children = self::buildTree($children, $taxable_relation, $taxable_callback, true);
++                }
++            }
++
++            $item_count = 0;
++
++            if ($relation && method_exists($taxonomy, $relation) && ($taxables = $taxonomy->{$relation})) {
++                $key = "taxonomies.$taxonomy->id";
++                $key.= '.'. Str::slug($relation);
++                $key.= $taxable_callback ? '.filter-'. Str::slug($taxable_callback) : '';
++                $key.= '.count';
++
++                $item_count = maybe_tagged_cache(['taxonomies', 'taxonomies:tree'])->remember($key, config('lecturize.taxonomies.cache-expiry', now()->addWeek()), function() use($taxables, $taxable_callback) {
++                    return $taxables->filter(function ($item) use ($taxable_callback) {
++                                        if ($taxable_callback && method_exists($item, $taxable_callback)) {
++                                            try {
++                                                return $item->{$taxable_callback}();
++                                            } catch (Exception) {}
++                                        }
++
++                                        return true;
++                                    })->count();
++                });
++            }
++
++            $terms->put($taxonomy->term->slug, [
++                'uuid'             => $taxonomy->uuid,
++                'taxonomy'         => $taxonomy->taxonomy,
++                'title'            => $taxonomy->term->title,
++                'slug'             => $taxonomy->term->slug,
++                'content'          => $taxonomy->content   ?? $taxonomy->term->content,
++                'lead'             => $taxonomy->lead      ?? $taxonomy->term->lead,
++                'meta_desc'        => $taxonomy->meta_desc ?? $taxonomy->lead ?? $taxonomy->term->lead,
++                'sort'             => $taxonomy->sort,
++                'visible'          => $taxonomy->visible,
++                'searchable'       => $taxonomy->searchable,
++                'alias-params'     => ($alias = $taxonomy->alias) ? $alias->getRouteParameters() : null,
++                'children'         => $children_count > 0 ? $children : null,
++                'taxable'          => $relation,
++                'count'            => $item_count,
++                'count-cumulative' => $item_count + ($children ? $children->sum('count-cumulative') : 0),
++            ]);
++        }
++
++        return $terms;
++    }
++}
+diff --git a/src/Traits/HasCategories.php b/src/Traits/HasCategories.php
+new file mode 100644
+index 0000000..720af43
+--- /dev/null
++++ b/src/Traits/HasCategories.php
+@@ -0,0 +1,340 @@
++<?php
++
++namespace Lecturize\Taxonomies\Traits;
++
++use Illuminate\Database\Eloquent\Builder;
++use Illuminate\Database\Eloquent\Collection as EloquentCollection;
++use Illuminate\Database\Eloquent\Model;
++use Illuminate\Database\Eloquent\Relations\MorphToMany;
++use Illuminate\Support\Collection;
++use Lecturize\Taxonomies\Models\Taxonomy;
++use Lecturize\Taxonomies\Models\Term;
++
++/**
++ * Class HasCategories
++ * @package Lecturize\Taxonomies\Traits
++ * @property EloquentCollection|Taxonomy[]  $taxonomies
++ *
++ * @method static Builder withinTaxonomy(Taxonomy|int|null $taxonomy)
++ * @method static Builder withinTaxonomies(Collection|array|null $taxonomies)
++ */
++trait HasCategories
++{
++    /**
++     * Return a collection of taxonomies for this model.
++     */
++    public function taxonomies(): MorphToMany
++    {
++        /** @var Model $this */
++        return $this->morphToMany(
++            config('lecturize.taxonomies.taxonomies.model', Taxonomy::class),
++            'taxable'
++        );
++    }
++
++    /**
++     * Convenience method to sync categories.
++     */
++    public function syncCategories(string $terms, string $taxonomy): void
++    {
++        $this->detachCategories();
++        $this->setCategories($terms, $taxonomy);
++    }
++
++    /**
++     * Convenience method for attaching a given taxonomy to this model.
++     */
++    public function attachTaxonomy(int $taxonomy_id): void
++    {
++        if (! $this->taxonomies()->where('id', $taxonomy_id)->first())
++            $this->taxonomies()->attach($taxonomy_id);
++    }
++
++    /**
++     * Convenience method for detaching a given taxonomy to this model.
++     */
++    public function detachTaxonomy(int $taxonomy_id): void
++    {
++        if ($this->taxonomies()->where('id', $taxonomy_id)->first())
++            $this->taxonomies()->detach($taxonomy_id);
++    }
++
++    /**
++     * Convenience method to set categories.
++     */
++    public function setCategories(string|array $categories, string $taxonomy): void
++    {
++        $this->detachCategories();
++        $this->addCategories($categories, $taxonomy);
++    }
++
++    /**
++     * Add one or multiple terms (categories) within a given taxonomy.
++     */
++    public function addCategories(string|array $categories, string $taxonomy, ?Taxonomy $parent = null): self
++    {
++        $taxonomies = \Lecturize\Taxonomies\Facades\Taxonomy::createCategories($categories, $taxonomy, $parent);
++
++        if (count($taxonomies) > 0)
++            foreach ($taxonomies as $taxonomy)
++                $this->taxonomies()->attach($taxonomy->id);
++
++        return $this;
++    }
++
++    /**
++     * Convenience method to add category to this model.
++     */
++    public function addCategory(string|array $categories, string $taxonomy, ?Taxonomy $parent = null): self
++    {
++        return $this->addCategories($categories, $taxonomy, $parent);
++    }
++
++    /**
++     * Add one or multiple terms in a given taxonomy.
++     * @deprecated Use addCategory() or addCategories() instead.
++     */
++    public function addTerm(string|array $categories, string $taxonomy, ?Taxonomy $parent = null): self
++    {
++        return $this->addCategory($categories, $taxonomy, $parent);
++    }
++
++    /**
++     * Pluck terms for a given taxonomy by name.
++     */
++    public function getTermTitles(string $taxonomy = ''): Collection
++    {
++        if ($terms = $this->getCategories($taxonomy))
++            return $terms->pluck('title');
++
++        return collect();
++    }
++
++    /**
++     * Pluck terms for a given taxonomy by name.
++     * @deprecated Use getTermTitles() instead.
++     */
++    public function getTermNames(string $taxonomy = ''): Collection
++    {
++        return $this->getTermTitles($taxonomy);
++    }
++
++    /**
++     * Get the terms (categories) for this item within the given taxonomy.
++     */
++    public function getCategories(string $taxonomy = ''): Collection
++    {
++        if ($taxonomy) {
++            $term_ids = $this->taxonomies()->where('taxonomy', $taxonomy)->pluck('term_id');
++        } else {
++            $term_ids = $this->taxonomies()->pluck('term_id');
++        }
++
++        return Term::whereIn('id', $term_ids)->get();
++    }
++
++    /**
++     * Get a term model by the given name and optionally a taxonomy.
++     */
++    public function getCategory(string $term_title, string $taxonomy = ''): ?Term
++    {
++        $terms = $this->getCategories($taxonomy);
++
++        return $terms->where('title', $term_title)->first();
++    }
++
++    /**
++     * Get the terms (categories) for this item within the given taxonomy.
++     * @deprecated Use getCategories() instead.
++     */
++    public function getTerms(string $taxonomy = ''): Collection
++    {
++        return $this->getCategories($taxonomy);
++    }
++
++    /**
++     * Get a term model by the given name and optionally a taxonomy.
++     * @deprecated Use getCategory() instead.
++     */
++    public function getTerm(string $term_title, string $taxonomy = ''): ?Term
++    {
++        return $this->getCategory($term_title, $taxonomy);
++    }
++
++    /**
++     * Check if this model belongs to a given category.
++     */
++    public function hasCategory(string $term_title, string $taxonomy = ''): bool
++    {
++        return (bool) $this->getCategory($term_title, $taxonomy);
++    }
++
++    /**
++     * Check if this model belongs to a given category.
++     * @deprecated Seemed confusing, use hasCategory() instead.
++     */
++    public function hasTerm(string $term_title, string $taxonomy = ''): bool
++    {
++        return $this->hasCategory($term_title, $taxonomy);
++    }
++
++    /**
++     * Detach the given category from this model.
++     */
++    public function detachCategory(string $term_title, string $taxonomy = ''): ?int
++    {
++        if (! $term = $this->getCategory($term_title, $taxonomy))
++            return null;
++
++        if ($taxonomy) {
++            $taxonomy = $this->taxonomies()->where('taxonomy', $taxonomy)->where('term_id', $term->id)->first();
++        } else {
++            $taxonomy = $this->taxonomies()->where('term_id', $term->id)->first();
++        }
++
++        return $this->taxonomies()->detach($taxonomy->id);
++    }
++
++    /**
++     * Detach the given category from this model.
++     * @deprecated Seemed confusing, use detachCategory() instead.
++     */
++    public function removeTerm(string $term_title, string $taxonomy = ''): ?int
++    {
++        return $this->detachCategory($term_title, $taxonomy);
++    }
++
++    /**
++     * Detach all categories (related taxonomies via taxable table) from this model.
++     */
++    public function detachCategories(): int
++    {
++        return $this->taxonomies()->detach();
++    }
++
++    /**
++     * Detach all terms from this model.
++     * @deprecated Use detachCategories() instead.
++     */
++    public function removeAllTerms(): int
++    {
++        return $this->detachCategories();
++    }
++
++    /**
++     * Scope by the given term.
++     * @deprecated This seemed confusing, use scopeCategorized() instead.
++     */
++    public function scopeWithTerm(Builder $query, string $category, string $taxonomy): Builder
++    {
++        return $this->scopeCategorized($query, $category, $taxonomy);
++    }
++
++    /**
++     * Scope that have been categorized in given term (category title) and taxonomy.
++     * Example: scope term "Shoes" in taxonomy "shop_cat" (shop category) or
++     * scope term "Shoes" in taxonomy "blog_cat" (blog articles).
++     */
++    public function scopeCategorized(Builder $query, string $category, string $taxonomy): Builder
++    {
++        $term_ids = Taxonomy::where('taxonomy', $taxonomy)->pluck('term_id');
++        $term     = Term::whereIn('id', $term_ids)->where('title', $category)->first();
++
++        return $query->whereHas('taxonomies', function($q) use($term) {
++            $q->where('term_id', $term->id);
++        });
++    }
++
++    /**
++     * Scope by given terms.
++     * @deprecated This seemed confusing, use scopeCategorizedIn() instead.
++     */
++    public function scopeWithTerms(Builder $query, array $categories, string $taxonomy): Builder
++    {
++        return $this->scopeCategorizedIn($query, $categories, $taxonomy);
++    }
++
++    /**
++     * Scope that have been categorized in given terms (category titles) and taxonomy.
++     */
++    public function scopeCategorizedIn(Builder $query, string|array $categories, string $taxonomy): Builder
++    {
++        if (is_string($categories))
++            $categories = explode('|', $categories);
++
++        foreach ($categories as $term)
++            $this->scopeCategorized($query, $term, $taxonomy);
++
++        return $query;
++    }
++
++    /**
++     * Scope by given taxonomy.
++     *
++     * @param  Builder            $query
++     * @param  Taxonomy|int|null  $taxonomy
++     * @return Builder
++     */
++    public function scopeWithinTaxonomy(Builder $query, Taxonomy|int|null $taxonomy): Builder
++    {
++        if ($taxonomy instanceof Taxonomy) {
++            $taxonomy_id = $taxonomy->id;
++        } elseif (is_int($taxonomy)) {
++            $taxonomy_id = $taxonomy;
++        } else {
++            return $query;
++        }
++
++        return $query->whereHas('taxonomies', function($q) use($taxonomy_id) {
++            $q->where('taxonomy_id', $taxonomy_id);
++        });
++    }
++
++    /**
++     * Scope by given taxonomy.
++     * @deprecated This seemed confusing, use scopeWithinTaxonomy() instead.
++     *
++     * @param  Builder            $query
++     * @param  Taxonomy|int|null  $taxonomy
++     * @return Builder
++     */
++    public function scopeHasCategory(Builder $query, Taxonomy|int|null $taxonomy): Builder
++    {
++        return $this->scopeWithinTaxonomy($query, $taxonomy);
++    }
++
++    /**
++     * Scope by taxonomies.
++     *
++     * @param  Builder                           $query
++     * @param  Collection|Taxonomy[]|array|null  $taxonomies
++     * @return Builder
++     */
++    public function scopeWithinTaxonomies(Builder $query, Collection|array|null $taxonomies): Builder
++    {
++        if ($taxonomies instanceof Collection) {
++            $taxonomy_ids = $taxonomies->pluck('id')->toArray();
++        } elseif (is_array($taxonomies)) {
++            $taxonomy_ids = $taxonomies;
++        } else {
++            return $query;
++        }
++
++        return $query->whereHas('taxonomies', function($q) use($taxonomy_ids) {
++            $q->whereIn('taxonomy_id', $taxonomy_ids);
++        });
++    }
++
++    /**
++     * Scope by taxonomies.
++     * @deprecated This seemed confusing, use scopeHasTaxonomies() instead.
++     *
++     * @param  Builder                           $query
++     * @param  Collection|Taxonomy[]|array|null  $taxonomies
++     * @return Builder
++     */
++    public function scopeHasCategories(Builder $query, Collection|array|null $taxonomies): Builder
++    {
++        return $this->scopeWithinTaxonomies($query, $taxonomies);
++    }
++}
+diff --git a/src/Traits/HasTaxonomies.php b/src/Traits/HasTaxonomies.php
+deleted file mode 100644
+index 54edbf8..0000000
+--- a/src/Traits/HasTaxonomies.php
++++ /dev/null
+@@ -1,279 +0,0 @@
+-<?php namespace Lecturize\Taxonomies\Traits;
+-
+-use Lecturize\Taxonomies\Models\Taxable;
+-use Lecturize\Taxonomies\Models\Taxonomy;
+-use Lecturize\Taxonomies\Models\Term;
+-use Lecturize\Taxonomies\TaxableUtils;
+-
+-/**
+- * Class HasTaxonomies
+- * @package Lecturize\Taxonomies\Traits
+- */
+-trait HasTaxonomies
+-{
+-    /**
+-     * Return a collection of taxonomies related to the taxed model.
+-     *
+-     * @return \Illuminate\Database\Eloquent\Relations\MorphMany
+-     */
+-    public function taxed()
+-    {
+-        return $this->morphMany(Taxable::class, 'taxable');
+-    }
+-
+-    /**
+-     * Return a collection of taxonomies related to the taxed model.
+-     *
+-     * @return \Illuminate\Database\Eloquent\Relations\MorphToMany
+-     */
+-    public function taxonomies()
+-    {
+-        return $this->morphToMany(Taxonomy::class, 'taxable');
+-    }
+-
+-    /**
+-     * Add one or multiple terms in a given taxonomy.
+-     *
+-     * @param mixed    $terms
+-     * @param string   $taxonomy
+-     * @param integer  $parent
+-     * @param integer  $order
+-     */
+-    public function addTerm($terms, $taxonomy, $parent = 0, $order = 0)
+-    {
+-        $terms = TaxableUtils::makeTermsArray($terms);
+-
+-        $this->createTaxables($terms, $taxonomy, $parent, $order);
+-
+-        $terms = Term::whereIn('name', $terms)->pluck('id')->all();
+-
+-        if (count($terms) > 0) {
+-            foreach ($terms as $term) {
+-                if ($this->taxonomies()->where('taxonomy', $taxonomy)->where('term_id', $term)->first())
+-                    continue;
+-
+-                $tax = Taxonomy::where('term_id', $term)->first();
+-                $this->taxonomies()->attach($tax->id);
+-            }
+-
+-            return;
+-        }
+-
+-        $this->taxonomies()->detach();
+-    }
+-
+-    /**
+-     * Convenience method for attaching this models taxonomies to the given parent taxonomy.
+-     *
+-     * @param  integer  $taxonomy_id
+-     */
+-    public function setCategory($taxonomy_id)
+-    {
+-        $this->taxonomies()->attach($taxonomy_id);
+-    }
+-
+-    /**
+-     * Create terms and taxonomies (taxables).
+-     *
+-     * @param mixed    $terms
+-     * @param string   $taxonomy
+-     * @param integer  $parent
+-     * @param integer  $order
+-     */
+-    public function createTaxables($terms, $taxonomy, $parent = 0, $order = 0)
+-    {
+-        $terms = TaxableUtils::makeTermsArray($terms);
+-
+-        TaxableUtils::createTerms($terms);
+-        TaxableUtils::createTaxonomies($terms, $taxonomy, $parent, $order);
+-    }
+-
+-    /**
+-     * Pluck taxonomies by given field.
+-     *
+-     * @param  string  $by
+-     * @return mixed
+-     */
+-    public function getTaxonomies($by = 'id')
+-    {
+-        return $this->taxonomies->pluck($by);
+-    }
+-
+-    /**
+-     * Pluck terms for a given taxonomy by name.
+-     *
+-     * @param  string  $taxonomy
+-     * @return mixed
+-     */
+-    public function getTermNames($taxonomy = '')
+-    {
+-        if ($terms = $this->getTerms($taxonomy))
+-            $terms->pluck('name');
+-
+-        return null;
+-    }
+-
+-    /**
+-     * Get the terms related to a given taxonomy.
+-     *
+-    * @param  string  $taxonomy
+-     * @return mixed
+-     */
+-    public function getTerms($taxonomy = '')
+-    {
+-        if ($taxonomy) {
+-            $term_ids = $this->taxonomies->where('taxonomy', $taxonomy)->pluck('term_id');
+-        } else {
+-            $term_ids = $this->getTaxonomies('term_id');
+-        }
+-
+-        return Term::whereIn('id', $term_ids)->get();
+-    }
+-
+-    /**
+-     * Get a term model by the given name and optionally a taxonomy.
+-     *
+-     * @param  string  $term_name
+-    * @param  string  $taxonomy
+-     * @return mixed
+-     */
+-    public function getTerm($term_name, $taxonomy = '')
+-    {
+-        if ($taxonomy) {
+-            $term_ids = $this->taxonomies->where('taxonomy', $taxonomy)->pluck('term_id');
+-        } else {
+-            $term_ids = $this->getTaxonomies('term_id');
+-        }
+-
+-        return Term::whereIn('id', $term_ids)->where('name', $term_name)->first();
+-    }
+-
+-    /**
+-     * Check if this model has a given term.
+-     *
+-     * @param  string  $term_name
+-     * @param  string  $taxonomy
+-     * @return boolean
+-     */
+-    public function hasTerm($term_name, $taxonomy = '')
+-    {
+-        return (bool) $this->getTerm($term_name, $taxonomy);
+-    }
+-
+-    /**
+-     * Disassociate the given term from this model.
+-     *
+-     * @param  string  $term_name
+-     * @param  string  $taxonomy
+-     * @return mixed
+-     */
+-    public function removeTerm($term_name, $taxonomy = '')
+-    {
+-        if (! $term = $this->getTerm($term_name, $taxonomy))
+-            return null;
+-
+-        if ($taxonomy) {
+-            $taxonomy = $this->taxonomies->where('taxonomy', $taxonomy)->where('term_id', $term->id)->first();
+-        } else {
+-            $taxonomy = $this->taxonomies->where('term_id', $term->id)->first();
+-        }
+-
+-        return $this->taxed()->where('taxonomy_id', $taxonomy->id)->delete();
+-    }
+-
+-    /**
+-     * Disassociate all terms from this model.
+-     *
+-     * @return mixed
+-     */
+-    public function removeAllTerms()
+-    {
+-        return $this->taxed()->delete();
+-    }
+-
+-    /**
+-     * Scope by given terms.
+-     *
+-     * @param  object  $query
+-     * @param  array   $terms
+-     * @param  string  $taxonomy
+-     * @return mixed
+-     */
+-    public function scopeWithTerms($query, $terms, $taxonomy)
+-    {
+-        $terms = TaxableUtils::makeTermsArray($terms);
+-
+-        foreach ($terms as $term)
+-            $this->scopeWithTerm($query, $term, $taxonomy);
+-
+-        return $query;
+-    }
+-
+-    /**
+-     * Scope by the given term.
+-     *
+-     * @param  object  $query
+-     * @param  string  $term_name
+-     * @param  string  $taxonomy
+-     * @return mixed
+-     */
+-    public function scopeWithTerm($query, $term_name, $taxonomy)
+-    {
+-        $term_ids = Taxonomy::where('taxonomy', $taxonomy)->pluck('term_id');
+-
+-        $term     = Term::whereIn('id', $term_ids)->where('name', $term_name)->first();
+-        $taxonomy = Taxonomy::where('term_id', $term->id)->first();
+-
+-        return $query->whereHas('taxonomies', function($q) use($term, $taxonomy) {
+-            $q->where('term_id', $term->id);
+-        });
+-    }
+-
+-    /**
+-     * Scope by given taxonomy.
+-     *
+-     * @param  object  $query
+-     * @param  string  $term_name
+-     * @param  string  $taxonomy
+-     * @return mixed
+-     */
+-    public function scopeWithTax($query, $term_name, $taxonomy)
+-    {
+-        $term_ids = Taxonomy::where('taxonomy', $taxonomy)->pluck('term_id');
+-
+-        $term     = Term::whereIn('id', $term_ids)->where('name', $term_name)->first();
+-        $taxonomy = Taxonomy::where('term_id', $term->id)->first();
+-
+-        return $query->whereHas('taxed', function($q) use($term, $taxonomy) {
+-            $q->where('taxonomy_id', $taxonomy->id);
+-        });
+-    }
+-
+-    /**
+-     * Scope by category id.
+-     *
+-     * @param  object   $query
+-     * @param  integer  $taxonomy_id
+-     * @return mixed
+-     */
+-    public function scopeHasCategory($query, $taxonomy_id)
+-    {
+-        return $query->whereHas('taxed', function($q) use($taxonomy_id) {
+-            $q->where('taxonomy_id', $taxonomy_id);
+-        });
+-    }
+-
+-    /**
+-     * Scope by category ids.
+-     *
+-     * @param  object  $query
+-     * @param  array   $taxonomy_ids
+-     * @return mixed
+-     */
+-    public function scopeHasCategories($query, $taxonomy_ids)
+-    {
+-        return $query->whereHas('taxed', function($q) use($taxonomy_ids) {
+-            $q->whereIn('taxonomy_id', $taxonomy_ids);
+-        });
+-    }
+-}
+\ No newline at end of file
+diff --git a/src/Traits/ModelFinder.php b/src/Traits/ModelFinder.php
+new file mode 100644
+index 0000000..6c04ca7
+--- /dev/null
++++ b/src/Traits/ModelFinder.php
+@@ -0,0 +1,52 @@
++<?php
++
++namespace Lecturize\Taxonomies\Traits;
++
++use Lecturize\Taxonomies\Models\Taxonomy;
++use Lecturize\Taxonomies\Models\Term;
++
++/**
++ * Class ModelFinder
++ * @package Lecturize\Taxonomies\Traits
++ */
++trait ModelFinder
++{
++    /**
++     * Find term by slug.
++     *
++     * @param  string  $slug
++     * @return Term|null
++     */
++    public function findTerm(string $slug): ?Term
++    {
++        return Term::whereSlug($slug)->first();
++    }
++
++    /**
++     * Find taxonomy by term id.
++     *
++     * @param  string|int  $term
++     * @param  string      $taxonomy
++     * @param  string      $term_field
++     * @return Taxonomy|null
++     */
++    public function findTaxonomyByTerm(string|int $term, string $taxonomy, string $term_field = 'id'): ?Taxonomy
++    {
++        return $this->findCategory($term, $taxonomy, $term_field);
++    }
++
++    /**
++     * Find category by term (category title) and taxonomy.
++     *
++     * @param  string|int  $term
++     * @param  string      $taxonomy
++     * @param  string      $term_field
++     * @return Taxonomy|null
++     */
++    public function findCategory(string|int $term, string $taxonomy, string $term_field = 'title'): ?Taxonomy
++    {
++        return Taxonomy::taxonomy($taxonomy)
++                       ->byTerm($term, $term_field)
++                       ->first();
++    }
++}
+\ No newline at end of file
+diff --git a/src/Traits/ModelGetter.php b/src/Traits/ModelGetter.php
+new file mode 100644
+index 0000000..6a67a60
+--- /dev/null
++++ b/src/Traits/ModelGetter.php
+@@ -0,0 +1,12 @@
++<?php
++
++namespace Lecturize\Taxonomies\Traits;
++
++/**
++ * Class ModelGetter
++ * @package Lecturize\Taxonomies\Traits
++ */
++trait ModelGetter
++{
++    // @todo
++}
+\ No newline at end of file
+diff --git a/src/Traits/PresentsCategories.php b/src/Traits/PresentsCategories.php
+new file mode 100644
+index 0000000..70b5a41
+--- /dev/null
++++ b/src/Traits/PresentsCategories.php
+@@ -0,0 +1,80 @@
++<?php
++
++namespace Lecturize\Taxonomies\Traits;
++
++use Exception;
++use Illuminate\Http\RedirectResponse;
++use Lecturize\Taxonomies\Models\Taxonomy;
++use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
++
++/**
++ * Class PresentsCategories
++ * @package Lecturize\Taxonomies\Traits
++ */
++trait PresentsCategories
++{
++    /**
++     * Check taxonomy path.
++     *
++     * @param  Taxonomy|null  $current
++     * @param  string         $route
++     * @return null|RedirectResponse
++     * @throws Exception
++     */
++    protected function checkTaxonomyPath(?Taxonomy $current, string $route = ''): ?RedirectResponse
++    {
++        // if there is no taxonomy, throw an exception
++        if (empty($current))
++            throw new Exception();
++
++        $link = route($route, $current->getRouteParameters());
++
++        $components = parse_url($link);
++
++        $path = ltrim($components['path'] ?? null, '/\\');
++
++        // if there is no path, throw an exception
++        if (empty($path))
++            throw new Exception();
++
++        // the link path and the request path don't match, so we redirect
++        if ($path !== request()->decodedPath())
++            return redirect($link);
++
++        return null;
++    }
++
++    /**
++     * Check taxonomy hierarchy.
++     *
++     * @param  string|null    $slug
++     * @param  Taxonomy|null  $current
++     * @param  Taxonomy|null  $parent
++     * @param  string         $route
++     * @return null|RedirectResponse
++     * @throws Exception
++     * @throws NotFoundHttpException
++     */
++    protected function checkTaxonomyHierarchy(?string $slug, ?Taxonomy $current, ?Taxonomy $parent = null, string $route = ''): ?RedirectResponse
++    {
++        // if there is no slug given, do nothing
++        if (empty($slug))
++            return null;
++
++        // no taxonomy has been found for the given slug
++        // let's redirect to parent if given or abort
++        if (! $current)
++            if ($parent) {
++                return redirect()->route($route, $parent->getRouteParameters());
++            } else {
++                throw new NotFoundHttpException();
++            }
++
++        // a taxonomy has been found, see if it matches the given parent
++        // redirect to calculated destination
++        if ($current->parent_id !== ($parent?->id))
++            return redirect()->route($route, $current->getRouteParameters());
++
++        return null;
++    }
++}
+diff --git a/src/Traits/TaxableTrait.php b/src/Traits/TaxableTrait.php
+deleted file mode 100644
+index 47e5bd6..0000000
+--- a/src/Traits/TaxableTrait.php
++++ /dev/null
+@@ -1,11 +0,0 @@
+-<?php namespace Lecturize\Taxonomies\Traits;
+-
+-/**
+- * Class TaxableTrait
+- * @deprecated Use HasTaxonomies instead.
+- * @package Lecturize\Taxonomies\Traits
+- */
+-trait TaxableTrait
+-{
+-     use HasTaxonomies;
+-}
+\ No newline at end of file
+diff --git a/src/helpers.php b/src/helpers.php
+new file mode 100644
+index 0000000..146e0a1
+--- /dev/null
++++ b/src/helpers.php
+@@ -0,0 +1,222 @@
++<?php
++
++use Illuminate\Cache\CacheManager;
++use Illuminate\Cache\TaggedCache;
++use Illuminate\Support\Collection;
++use Illuminate\Database\Eloquent\Model;
++use Illuminate\Support\Facades\Cache;
++use Lecturize\Taxonomies\Taxonomy;
++
++/**
++ * Get categories tree as a collection.
++ *
++ * @param  string|array  $taxonomy
++ * @param  string        $route
++ * @param  string        $taxable_relation
++ * @param  string        $taxable_callback
++ * @param  bool          $include_empty
++ * @return Collection
++ * @throws Exception
++ */
++function get_categories_collection(string|array $taxonomy = 'category', string $route = '', string $taxable_relation = '', string $taxable_callback = '', bool $include_empty = false): Collection
++{
++    $tree = Taxonomy::getTree($taxonomy, $taxable_relation, $taxable_callback);
++
++    return build_categories_collection_from_tree($tree, $taxonomy, $route, $taxable_relation, $include_empty);
++}
++
++/**
++ * Recursive function to build categories collection from given taxonomies tree.
++ *
++ * @param  Collection    $tree
++ * @param  string|array  $taxonomy
++ * @param  string        $route
++ * @param  string        $taxable_relation
++ * @param  bool          $include_empty
++ * @param  array         $params
++ * @param  array         $attributes
++ * @param  bool          $is_child
++ * @return Collection
++ */
++function build_categories_collection_from_tree(Collection $tree, string|array $taxonomy, string $route, string $taxable_relation, bool $include_empty = false, array $params = [], array $attributes = [], bool $is_child = false): Collection
++{
++    $temp  = $params;
++    $items = collect();
++
++    $count = 1;
++    foreach ($tree as $properties) {
++        $params[] = $properties['slug'];
++
++        $children = null;
++
++        foreach ($properties as $value) {
++            if ($value instanceof Collection) {
++                $children = build_categories_collection_from_tree($value, $taxonomy, $route, $taxable_relation, $include_empty, $params, $attributes, true);
++                break;
++            }
++        }
++
++        $is_active = taxonomies_is_active_route($route, $params);
++
++        $item = [
++            'uuid'             => $properties['uuid'],
++            'taxonomy'         => $properties['taxonomy'],
++            'title'            => $properties['title'],
++            'slug'             => $properties['slug'],
++            'content'          => $properties['content'],
++            'lead'             => $properties['lead'],
++            'meta_desc'        => $properties['meta_desc'],
++            'visible'          => $properties['visible'],
++            'searchable'       => $properties['searchable'],
++            'route'            => $route,
++            'params'           => is_array($properties['alias-params']) ? get_term_link($route, $properties['alias-params']) : $params,
++            'link'             => is_array($properties['alias-params']) ? get_term_link($route, $properties['alias-params']) : get_term_link($route, $params),
++            'children'         => $children,
++            'count'            => $properties['count'],
++            'count-cumulative' => $properties['count-cumulative'],
++            'active'           => $is_active,
++            'active-branch'    => $is_active ?: ($children && $children->where('active-branch', true)->count()),
++        ];
++
++        $params = [];
++        if ($count !== count($tree))
++            $params = $temp;
++
++        $count++;
++
++        if (! $include_empty && $properties['count-cumulative'] < 1) {
++             continue;
++        } else {
++            $items->push($item);
++        }
++    }
++
++    return $items;
++}
++
++/**
++ * Get the categories for a given model.
++ *
++ * @param  Model   $model
++ * @param  string  $taxonomy
++ * @param  string  $route
++ * @return array
++ */
++function get_categories_for_model(Model $model, string $taxonomy = 'category', string $route = 'taxonomy.show'): array
++{
++    if (! method_exists($model, 'taxonomies'))
++        return [];
++
++    if (! $taxonomies = $model->taxonomies)
++        return [];
++
++    if ($taxonomy)
++        $taxonomies = $taxonomies->where('taxonomy', $taxonomy);
++
++    $categories = [];
++    foreach ($taxonomies as $taxonomy) {
++        $params = $taxonomy->getRouteParameters();
++        $params = array_diff($params, [$taxonomy->taxonomy]);
++
++        $categories[] = '<a href="'. get_term_link($route, $params) .'" rel="tag">'. $taxonomy->term->title .'</a>';
++    }
++
++    return $categories;
++}
++
++/**
++ * Get category options for a select box.
++ *
++ * @param  Collection|array  $categories
++ * @param  string            $selected_slug
++ * @param  int               $level
++ * @return string
++ */
++function get_category_options(Collection|array $categories, string $selected_slug = '', int $level = 0): string
++{
++    $category_items = [];
++
++    foreach ($categories as $item) {
++        $children     = $item['children'];
++        $has_children = $children && count($children) > 0;
++
++        $category_item = '<option class="level-'. $level .'" value="'. $item['slug'] .'"'. ($selected_slug === $item['slug'] ? ' selected' : '') .'>';
++        $category_item.= trim(str_repeat('> ', $level) .' '. $item['title']);
++        $category_item.= '</option>';
++
++        if ($has_children) {
++            $category_children = get_category_options($children, $selected_slug, $level + 1);
++
++            $category_item.= $category_children;
++        }
++
++        if ($level === 0)
++            $category_item = '<optgroup label="'. $item['title'] .' ('. $item['taxonomy'] .')">'. $category_item .'</optgroup>';
++
++        $category_items[] = $category_item;
++    }
++
++    return implode('', array_filter(array_map('trim', $category_items)));
++}
++
++/**
++ * Get a terms link.
++ *
++ * @param  string  $route
++ * @param  array   $params
++ * @return string
++ */
++function get_term_link(string $route = 'taxonomy.show', array $params = []): string
++{
++    return $route ? route($route, $params) : '#';
++}
++
++if (! function_exists('taxonomies_is_active_route')) :
++    /**
++     * Check if given route is the active route.
++     *
++     * @param  string  $route
++     * @param  array   $params
++     * @return bool
++     */
++    function taxonomies_is_active_route(string $route = '', array $params = []): bool
++    {
++        if (is_array($params) && count($params) > 0) {
++            $route = route($route, $params, false);
++            $path  = '/'. request()->decodedPath();
++
++            return $route === $path;
++        }
++
++        if (request()->routeIs($route))
++            return true;
++
++        if (! $currentRoute = app()->router->currentRouteName())
++            return false;
++
++        if (! is_array($route))
++            $route = [$route];
++
++        if (in_array($currentRoute, $route))
++            return true;
++
++        return false;
++    }
++endif;
++
++if (! function_exists('maybe_tagged_cache')) :
++    /**
++     * Get a tagged cache instance.
++     *
++     * @param  array|string  $names
++     * @return TaggedCache|CacheManager
++     */
++    function maybe_tagged_cache(array|string $names = 'taxonomies'): TaggedCache|CacheManager
++    {
++        try {
++            return Cache::tags($names);
++        } catch (Exception) {
++            return cache();
++        }
++    }
++endif;
+diff --git a/tests/DemoTest.php b/tests/DemoTest.php
+new file mode 100644
+index 0000000..f62432f
+--- /dev/null
++++ b/tests/DemoTest.php
+@@ -0,0 +1,11 @@
++<?php
++
++namespace Lecturize\Taxonomies\Tests;
++
++class DemoTest extends TestCase
++{
++    public function true_is_true()
++    {
++        $this->assertTrue(true);
++    }
++}
+\ No newline at end of file
+diff --git a/tests/TestCase.php b/tests/TestCase.php
+new file mode 100644
+index 0000000..2d55fdf
+--- /dev/null
++++ b/tests/TestCase.php
+@@ -0,0 +1,26 @@
++<?php
++
++namespace Lecturize\Taxonomies\Tests;
++
++use Lecturize\Taxonomies\TaxonomiesServiceProvider;
++
++class TestCase extends \Orchestra\Testbench\TestCase
++{
++    public function setUp(): void
++    {
++        parent::setUp();
++        // additional setup
++    }
++
++    protected function getPackageProviders($app)
++    {
++        return [
++            TaxonomiesServiceProvider::class,
++        ];
++    }
++
++    protected function getEnvironmentSetUp($app)
++    {
++        // perform environment setup
++    }
++}
+\ No newline at end of file
